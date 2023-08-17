@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "fetch": "node index.js",
+    "fetch-top-players": "node fetchTopPlayers.js",
+    "fetch-game-ids": "node fetchGameIds.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "bbenip",
