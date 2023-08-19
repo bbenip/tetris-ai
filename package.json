@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "combine-game-data": "node combineGameData.js",
     "fetch-top-players": "node fetchTopPlayers.js",
     "fetch-game-ids": "node fetchGameIds.js",
     "fetch-game-data": "node fetchGameData.js",
