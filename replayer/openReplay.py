@@ -18,7 +18,7 @@ REPLAY_PAGE_URL = "https://jstris.jezevec10.com/replay"
 
 ABSOLUTE_PATH = os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_FOLDER_PATH = os.path.join(ABSOLUTE_PATH, "Downloads")
-GAMES_FOLDER_PATH = os.path.join(ABSOLUTE_PATH, 'games')
+GAMES_FOLDER_PATH = os.path.join(ABSOLUTE_PATH, 'input_games')
 
 GAMES_JSON_FILENAME = 'games.json'
 DEFAULT_REPLAY_FILENAME = 'replay.json'
@@ -84,9 +84,9 @@ def wait_for_file(file_path, timeout):
     return True
 
 def runReplay(driver, replay, replayID):
-    replayTextArea = driver.find_element(By.ID, REPLAY_TEXT_ID)
-    replayTextArea.clear()
-    replayTextArea.send_keys(replay)
+    #Sets replay text
+    driver.execute_script(f"document.getElementById('{REPLAY_TEXT_ID}').value='{replay}'")
+
     loadButton = driver.find_element(By.ID, LOAD_BUTTON_ID)
     loadButton.click()
 
