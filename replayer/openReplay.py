@@ -20,7 +20,7 @@ ABSOLUTE_PATH = os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_FOLDER_PATH = os.path.join(ABSOLUTE_PATH, "Downloads")
 GAMES_FOLDER_PATH = os.path.join(ABSOLUTE_PATH, 'input_games')
 
-GAMES_JSON_FILENAME = 'games.json'
+GAMES_JSON_FILENAME = 'replayStrings.json'
 DEFAULT_REPLAY_FILENAME = 'replay.json'
 NUMBERED_REPLAY_FORMAT = '%s.json'
 
@@ -34,13 +34,16 @@ PAUSE_BUTTON_ID = 'pause'
 REPLAY_TEXT_ID = 'rep0'
 DOWNLOAD_BTN_ID = 'fullDL'
 
+MAX_FAILURES = 5 # Maximum number of times we repeat a request
+FAILURE_TIMEOUT = 30 # Time (in seconds) to wait after a failed request
+
 # Load games from JSON file
 def loadGames(filepath):
     out = []
     with open(filepath, 'rb') as f:
         data = json.load(f)
         for game in data:
-            out.append(game["d"])
+            out.append(game)
     return out
 
 # Intercepts outgoing requests
@@ -57,7 +60,7 @@ def interceptor(request):
 
 def setupDriver():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless") # Uncomment this to run the replays without GUI
+    chrome_options.add_argument("--headless") # Uncomment this to run the replays without GUI
     chrome_options.add_argument(f'user-agent={USER_AGENT}')
 
     prefs = {}
@@ -115,22 +118,24 @@ def tearDownDriver(driver):
 # Create a new instance of the Chrome driver
 driver = setupDriver()
 
-try:
-    games_file_path = os.path.join(GAMES_FOLDER_PATH, GAMES_JSON_FILENAME)
-    games = loadGames(games_file_path)
-except:
-    print("Error loading games")
+games_file_path = os.path.join(GAMES_FOLDER_PATH, GAMES_JSON_FILENAME)
+games = loadGames(games_file_path)
 
-# try:
-    # Go to the replayer page
+COUNT_START = 0
+COUNT_STOP = len(games)
+
+# Go to the replayer page
 driver.get(REPLAY_PAGE_URL)
-runReplay(driver, REPLAY_TEXT, REPLAY_ID)
-runReplay(driver, REPLAY_TEXT_2, REPLAY_ID+1)
-print("Type \"close\" to close window... ", end="")
-while input() != "close":
-    pass
-# except:
-#     print("Error running replay scraper")
-# finally:
+for i in range(COUNT_START, COUNT_STOP):
+    replayText = games[i]
+    failures = 0
+    while failures < MAX_FAILURES:
+        try:
+            runReplay(driver, replayText, i)
+            print(f"Downloaded game {i}/{COUNT_STOP}")
+            break
+        except:
+            failures += 1
+            time.sleep(FAILURE_TIMEOUT)
+ 
 tearDownDriver(driver)
-
