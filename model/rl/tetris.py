@@ -393,10 +393,10 @@ Press space to continue""")
     def getState(self):
         currView = join_matrices(self.board, self.stone, (self.stone_x, self.stone_y))
 
-        board = tf.expand_dims(tf.convert_to_tensor(currView), -1),
-        next_piece = tf.convert_to_tensor(padToShape(self.next_stone, (4,4))), #2x2, 2x3, 1x4
-        current_piece = tf.convert_to_tensor(padToShape(self.stone, (4,4))),
-        position = tf.convert_to_tensor(np.array((self.stone_x, self.stone_y)))
+        board = tf.reshape(tf.convert_to_tensor(currView), (1, 21, 10, 1)),
+        next_piece = tf.reshape(tf.convert_to_tensor(padToShape(self.next_stone, (4,4))), (1, 4, 4, 1)), #2x2, 2x3, 1x4
+        current_piece = tf.reshape(tf.convert_to_tensor(padToShape(self.stone, (4,4))), (1, 4, 4, 1)), #2x2, 2x3, 1x4 padded to 4x4
+        position = tf.reshape(tf.convert_to_tensor(np.array((self.stone_x, self.stone_y))), (1, 2)) #2x1
         return([board, next_piece, current_piece, position])
     
     def getReward(self, actionStr, result):        
