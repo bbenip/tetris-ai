@@ -135,6 +135,7 @@ class TetrisApp(object):
 
     def __init__(self, ai=False, rewards=None):
         self.ai = ai
+        self.rewards = rewards
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
         
