@@ -122,7 +122,8 @@ def padToShape(arr, shape):
     assert(arr.ndim == len(shape))
     assert(np.multiply.reduce(shape) >= np.multiply.reduce(arr.shape))
     result = np.zeros(shape)
-    return join_matrices(result, arr, (0,0))
+    result[:arr.shape[0], :arr.shape[1]] = arr
+    return result
 
 def new_board():
     board = np.zeros((rows, cols), dtype=int)
@@ -133,12 +134,14 @@ class TetrisApp(object):
     COLLISION_MOVES = ['LEFT', 'RIGHT', 'ROTATE_LEFT', 'ROTATE_RIGHT']
 
     def __init__(self, ai=False, rewards=None):
+        self.ai = ai
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
         
         if ai:
             if not rewards: 
                 raise ValueError("Required parameter: rewards")
+            self.invalidMoveReward, self.gameOverReward, self.validMoveReward = rewards
             self.initRL(rewards)
         else:
             self.initPygame()
@@ -182,6 +185,19 @@ class TetrisApp(object):
         self.score = 0
         self.lines = 0
         pygame.time.set_timer(pygame.USEREVENT+1, 1000)
+    
+    def initRL(self, rewards):
+        '''X: [board, next, curr, pos] | A: [LEFT, RIGHT, DOWN, UP, SPACE] | S: [score]'''
+        
+        self.next_stone_idx = rand(len(tetris_shapes))
+        self.next_stone = tetris_shapes[self.next_stone_idx]
+        
+        self.board = new_board()
+        self.new_stone()
+        self.level = 1
+        self.score = 0
+        self.lines = 0
+        self.gameover = False
     
     def disp_msg(self, msg, topleft):
         x,y = topleft
@@ -311,7 +327,10 @@ class TetrisApp(object):
     
     def start_game(self):
         if self.gameover:
-            self.initHuman()
+            if self.ai:
+                self.initRL(self.rewards)
+            else:
+                self.initHuman()
             self.gameover = False
     
     def run(self):
@@ -369,24 +388,6 @@ Press space to continue""")
                             key_actions[key]()
                     
             dont_burn_my_cpu.tick(maxfps)
-    
-    def initRL(self, rewards):
-        '''X: [board, next, curr, pos] | A: [LEFT, RIGHT, DOWN, UP, SPACE] | S: [score]'''
-        self.invalidMoveReward, self.gameOverReward, self.validMoveReward = rewards
-        
-        self.next_stone_idx = rand(len(tetris_shapes))
-        self.next_stone = tetris_shapes[self.next_stone_idx]
-       
-        self.gameover = False
-        self.paused = False
-        
-        self.board = new_board()
-        self.new_stone()
-        self.level = 1
-        self.score = 0
-        self.lines = 0
-        if self.gameover:
-                print("game over")
 
     def getState(self):
         currView = join_matrices(self.board, self.stone, (self.stone_x, self.stone_y))
