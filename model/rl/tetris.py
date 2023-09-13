@@ -198,6 +198,7 @@ class TetrisApp(object):
         self.score = 0
         self.lines = 0
         self.gameover = False
+        self.paused = False
     
     def disp_msg(self, msg, topleft):
         x,y = topleft
@@ -394,8 +395,8 @@ Press space to continue""")
         
         return {
             "board": currView,
-            "next_piece": padToShape(self.next_stone, (2,4)), #2x2, 2x3, 1x4
-            "current_piece": padToShape(self.stone, (2,4)),
+            "next_piece": padToShape(self.next_stone, (4,4)), #2x2, 2x3, 1x4
+            "current_piece": padToShape(self.stone, (4,4)),
             "position": np.array((self.stone_x, self.stone_y))
         }
     
