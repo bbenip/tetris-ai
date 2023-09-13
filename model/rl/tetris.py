@@ -32,6 +32,7 @@
 # THE SOFTWARE.
 
 from random import randrange as rand
+import tensorflow as tf
 import sys
 import numpy as np
 
@@ -112,9 +113,7 @@ def remove_row(board, row):
 def join_matrices(mat1, mat2, mat2_off):
     out = np.copy(mat1)
     off_x, off_y = mat2_off
-    for cy, row in enumerate(mat2):
-        for cx, val in enumerate(row):
-            out[cy+off_y-1 ][cx+off_x] += val
+    out[off_y: off_y + mat2.shape[0], off_x: off_x + mat2.shape[1]] += mat2
     return out
     
 def padToShape(arr, shape):
@@ -168,7 +167,7 @@ class TetrisApp(object):
                                                      # block them.
     
     def new_stone(self):
-        self.stone = self.next_stone[:]
+        self.stone = np.copy(self.next_stone)
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
         self.stone_x = int(cols / 2 - len(self.stone[0])/2)
@@ -393,13 +392,12 @@ Press space to continue""")
 
     def getState(self):
         currView = join_matrices(self.board, self.stone, (self.stone_x, self.stone_y))
-        
-        return {
-            "board": currView,
-            "next_piece": padToShape(self.next_stone, (4,4)), #2x2, 2x3, 1x4
-            "current_piece": padToShape(self.stone, (4,4)),
-            "position": np.array((self.stone_x, self.stone_y))
-        }
+
+        board = tf.expand_dims(tf.convert_to_tensor(currView), -1),
+        next_piece = tf.convert_to_tensor(padToShape(self.next_stone, (4,4))), #2x2, 2x3, 1x4
+        current_piece = tf.convert_to_tensor(padToShape(self.stone, (4,4))),
+        position = tf.convert_to_tensor(np.array((self.stone_x, self.stone_y)))
+        return([board, next_piece, current_piece, position])
     
     def getReward(self, actionStr, result):        
         if actionStr in self.COLLISION_MOVES:
@@ -433,7 +431,7 @@ Press space to continue""")
         return (self.getState(), reward, self.gameover)
 
 
-#if __name__ == '__main__':
+# if __name__ == '__main__':
 #    INVALID_MOVE_REWARD = -999
 #    GAME_OVER_REWARD = -999
 #    VALID_MOVE_REWARD = 1
