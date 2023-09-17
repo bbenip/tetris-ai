@@ -33,6 +33,7 @@
 
 from random import randrange as rand
 import tensorflow as tf
+import tensorflow.experimental.numpy as tnp
 import sys
 import numpy as np
 
@@ -56,93 +57,114 @@ colors = [
 
 # Define the shapes of the single parts
 tetris_shapes = [
-    np.array([
+    tf.constant([
         [1, 1, 1],
         [0, 1, 0]]
     ),
-    
-    np.array([
+    tf.constant([
         [0, 2, 2],
         [2, 2, 0]
     ]),
-    
-    np.array([
+    tf.constant([
         [3, 3, 0],
         [0, 3, 3]
     ]),
-    
-    np.array([
+    tf.constant([
         [4, 0, 0],
         [4, 4, 4]
      ]),
-    
-    np.array([
+    tf.constant([
         [0, 0, 5],
         [5, 5, 5]
     ]),
-    
-    np.array([
+    tf.constant([
         [6, 6, 6, 6]
     ]),
-    
-    np.array([
+    tf.constant([
         [7, 7],
         [7, 7]
      ])
 ]
 
-def rotate_clockwise(shape):
-    return np.rot90(shape, k=-1)
+COLLISION_MOVES = ['LEFT', 'RIGHT', 'ROTATE_LEFT', 'ROTATE_RIGHT'] #These moves give penalties if used in invalid ways
 
-def check_collision(board, shape, offset):
+'''
+def check_collision(board, piece, offset):
     off_x, off_y = offset
-    for iy, ix in np.ndindex(shape.shape):
-        cell = shape[iy, ix]
+    for i, j in np.ndindex(*piece.shape):
+        cell = piece[i, j]
         try:
-            if cell and board[ iy + off_y ][ ix + off_x ]:
+            if cell and board[ i + off_y ][ j + off_x ]:
                 return True
         except IndexError:
             return True
     return False
+'''
 
-def remove_row(board, row):
-    out = np.delete(board, row, 0)
-    out = np.vstack((np.zeros((1,cols), dtype=int), out))
+@tf.function
+def check_collision(board, piece, offset):
+    padded_piece = padToShape(piece, board.shape, offset)
+    collided_tiles = tf.math.multiply(board, padded_piece)
+    collision = tf.math.reduce_sum(collided_tiles)
+    return collision > 0
+
+@tf.function
+def remove_rows(board, row_mask):
+    removed_count = board.shape[0] - tf.math.reduce_sum(row_mask)
+    out = tf.range(row_mask.shape[0])
+    out = tf.boolean_mask(out, row_mask)
+    out = tf.gather(board, out)
+    new_rows = tf.zeros((removed_count, board.shape[1]), dtype=tf.int32)
+    out = tf.concat((new_rows, out), axis=0)
     return out
-    
+
+# def join_matrices(mat1, mat2, mat2_off):
+#     out = np.copy(mat1)
+#     off_x, off_y = mat2_off
+#     out[off_y: off_y + mat2.shape[0], off_x: off_x + mat2.shape[1]] += mat2
+#     return out
+
+@tf.function
 def join_matrices(mat1, mat2, mat2_off):
-    out = np.copy(mat1)
-    off_x, off_y = mat2_off
-    out[off_y: off_y + mat2.shape[0], off_x: off_x + mat2.shape[1]] += mat2
-    return out
-    
-def padToShape(arr, shape):
-    assert(type(shape) is tuple)
-    assert(arr.ndim == len(shape))
-    assert(np.multiply.reduce(shape) >= np.multiply.reduce(arr.shape))
-    result = np.zeros(shape)
-    result[:arr.shape[0], :arr.shape[1]] = arr
-    return result
+    mask = padToShape(mat2, mat1.shape, mat2_off)
+    return tf.math.add(mat1, mask)
 
-def new_board():
-    board = np.zeros((rows, cols), dtype=int)
-    board = np.vstack((board, np.ones((1,cols), dtype=int)))
-    return board
+# def padToShape(arr, shape):
+#     result = tf.zeros(shape, dtype=tf.int32)
+#     result[:arr.shape[0], :arr.shape[1]] = arr
+#     return result
+
+#Pads array {arr} to be of size {shape}, with the orignal array anchored at {offset = (row, col)}
+@tf.function
+def padToShape(arr, shape, offset=(0,0)):
+    p_top = offset[0]
+    p_bottom = shape[0] - arr.shape[0] - p_top
+    p_left = offset[1]
+    p_right = shape[1] - arr.shape[1] - p_left
+    paddings = tf.constant([[p_top, p_bottom,], [p_left, p_right]])
+    padded = tf.pad(arr, paddings)
+    return padded
+
+@tf.function
+def rotate_tensor(tensor, direction=1):
+    out = tf.expand_dims(tensor, -1)
+    out = tf.image.rot90(out, k=direction*-1)
+    out = tf.squeeze(out, axis=-1)
+    return out
 
 class TetrisApp(object):
-    COLLISION_MOVES = ['LEFT', 'RIGHT', 'ROTATE_LEFT', 'ROTATE_RIGHT']
-
     def __init__(self, ai=False, rewards=None):
         self.ai = ai
         self.rewards = rewards
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
+        self.col_heights = tf.zeros(cols, dtype=np.int32)
         
         if ai:
             if not rewards: 
                 raise ValueError("Required parameter: rewards")
-            self.invalidMoveReward, self.gameOverReward, self.validMoveReward = rewards
-            self.initRL(rewards)
+            self.invalidMoveReward, self.gameOverReward, self.validMoveReward, self.lineHeightPenalty = rewards
+            self.initRL()
         else:
             self.initPygame()
             self.initHuman()
@@ -166,8 +188,14 @@ class TetrisApp(object):
                                                      # events, so we
                                                      # block them.
     
+    @tf.function
+    def new_board(self):
+        board = tf.zeros((rows, cols), dtype=tf.int32)
+        board = tf.concat((board, tf.ones((1,cols), dtype=tf.int32)),  axis=0)
+        return board
+
     def new_stone(self):
-        self.stone = np.copy(self.next_stone)
+        self.stone = tf.identity(self.next_stone)
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
         self.stone_x = int(cols / 2 - len(self.stone[0])/2)
@@ -175,28 +203,30 @@ class TetrisApp(object):
         
         if check_collision(self.board,
                            self.stone,
-                           (self.stone_x, self.stone_y)):
+                           (self.stone_y, self.stone_x)):
             self.gameover = True
     
     def initHuman(self):
-        self.board = new_board()
+        self.board = self.new_board()
         self.new_stone()
         self.level = 1
         self.score = 0
         self.lines = 0
+        self.line_height = 0
         pygame.time.set_timer(pygame.USEREVENT+1, 1000)
     
-    def initRL(self, rewards):
+    def initRL(self):
         '''X: [board, next, curr, pos] | A: [LEFT, RIGHT, DOWN, UP, SPACE] | S: [score]'''
         
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
         
-        self.board = new_board()
+        self.board = self.new_board()
         self.new_stone()
         self.level = 1
         self.score = 0
         self.lines = 0
+        self.line_height = 0
         self.gameover = False
         self.paused = False
     
@@ -262,7 +292,7 @@ class TetrisApp(object):
             collided = check_collision(
                             self.board,
                             self.stone,
-                            (new_x, self.stone_y))
+                            (self.stone_y, new_x))
             if not collided:
                 self.stone_x = new_x
                 return True
@@ -272,36 +302,51 @@ class TetrisApp(object):
         self.center_msg("Exiting...")
         pygame.display.update()
         sys.exit()
-    
+
+    #Clears all full rows and returns the score gained
+    def clear_rows(self):
+        cleared_rows = 0
+        row_clear_mask = tf.Variable(tf.ones(21,), trainable=False)
+        for i in range(self.board.shape[0]-1):
+            row = self.board[i]
+            if tf.math.count_nonzero(row) == row.shape[0]:
+                row_clear_mask[i].assign(0)
+                cleared_rows += 1
+                self.line_height -= 1
+        
+        self.board = remove_rows(self.board, row_clear_mask)
+        return self.add_cl_lines(cleared_rows)
+
     def drop(self, manual):
         scoreChange = 0
         if not self.gameover and not self.paused:
             scoreChange = 1 if manual else 0
             self.score += 1 if manual else 0
+            prev_y = self.stone_y
             self.stone_y += 1
             if check_collision(self.board,
                                self.stone,
-                               (self.stone_x, self.stone_y)):
+                               (self.stone_y, self.stone_x)):
                 self.board = join_matrices(
                   self.board,
                   self.stone,
-                  (self.stone_x, self.stone_y))
+                  (prev_y, self.stone_x))
+                self.line_height = max(self.line_height, rows - (prev_y))
+                scoreChange += self.clear_rows()
                 self.new_stone()
-                cleared_rows = 0
-                while True:
-                    for i in range(len(self.board)-1):
-                        row = self.board[i]
-                        if 0 not in row:
-                            self.board = remove_row(
-                              self.board, i)
-                            cleared_rows += 1
-                            break
-                    else:
-                        break
-                scoreChange += self.add_cl_lines(cleared_rows)
                 return (True, scoreChange)
         return (False, scoreChange)
     
+    #pos = (y, x)
+    # Returns the distance from the bottom of the piece to the rest of the stack
+    def distance_to_stack(self, piece, pos):
+        minDist = rows
+        for i, j in np.ndindex(*piece.shape):
+            if piece[i, j] != 0:
+                glob_i, glob_j = i + pos[0], j + pos[1]
+                minDist = min(minDist, rows - self.col_heights[glob_j] - glob_i)
+        return minDist 
+
     def insta_drop(self):
         scoreChange = 0
         if not self.gameover and not self.paused:
@@ -309,16 +354,15 @@ class TetrisApp(object):
             while(not dropped[0]):
                 scoreChange += dropped[1]
                 dropped = self.drop(True)
-                pass
             scoreChange += dropped[1]
         return scoreChange
-    
+
     def rotate_stone(self, direction = 1):
         if not self.gameover and not self.paused:
-            new_stone = np.rot90(self.stone, k=direction*-1)
+            new_stone = rotate_tensor(self.stone, direction)
             if not check_collision(self.board,
                                    new_stone,
-                                   (self.stone_x, self.stone_y)):
+                                   (self.stone_y, self.stone_x)):
                 self.stone = new_stone
                 return True
         return False
@@ -329,7 +373,7 @@ class TetrisApp(object):
     def start_game(self):
         if self.gameover:
             if self.ai:
-                self.initRL(self.rewards)
+                self.initRL()
             else:
                 self.initHuman()
             self.gameover = False
@@ -353,8 +397,7 @@ class TetrisApp(object):
         while 1:
             self.screen.fill((0,0,0))
             if self.gameover:
-                self.center_msg("""Game Over!
-Press space to continue""")
+                self.center_msg("""Game Over! Press space to continue""")
             else:
                 if self.paused:
                     self.center_msg("Paused")
@@ -391,23 +434,30 @@ Press space to continue""")
             dont_burn_my_cpu.tick(maxfps)
 
     def getState(self):
-        currView = join_matrices(self.board, self.stone, (self.stone_x, self.stone_y))
+        currView = join_matrices(self.board, self.stone, (self.stone_y, self.stone_x))
 
-        board = tf.reshape(tf.convert_to_tensor(currView), (21, 10, 1)),
-        next_piece = tf.reshape(tf.convert_to_tensor(padToShape(self.next_stone, (4,4))), (4, 4, 1)), #2x2, 2x3, 1x4
-        current_piece = tf.reshape(tf.convert_to_tensor(padToShape(self.stone, (4,4))), (4, 4, 1)), #2x2, 2x3, 1x4 padded to 4x4
-        position = tf.reshape(tf.convert_to_tensor(np.array((self.stone_x, self.stone_y))), (1, 2)) #2x1
-        return([board, next_piece, current_piece, position])
+        board = currView
+        next_piece = padToShape(self.next_stone, (4,4)) #2x2, 2x3, 1x4
+        current_piece = padToShape(self.stone, (4,4)) #2x2, 2x3, 1x4 padded to 4x4
+        position = tf.constant((self.stone_x, self.stone_y), dtype=tf.int32, shape=(1, 2)) #1x2 #2x1
+        line_height = tf.constant(self.line_height, dtype=tf.int32, shape=(1, 1))
+
+        return([board, next_piece, current_piece, position, line_height])
     
-    def getReward(self, actionStr, result):        
-        if actionStr in self.COLLISION_MOVES:
-            return self.validMoveReward if result else self.invalidMoveReward
+    def getReward(self, actionStr, result, delta_line_height):
+        reward = 0        
+
+        if actionStr in COLLISION_MOVES:
+            reward = self.validMoveReward if result else self.invalidMoveReward
         elif actionStr == 'DOWN':
-            return result[1]
+            reward = result[1]
         elif actionStr == 'HARD_DROP':
-            return result
+            reward = result
         else:
             raise ValueError("Unknown move")
+
+        reward -= self.lineHeightPenalty * delta_line_height
+        return reward
     
     def doAction(self, action):
         ACTIONS = {0: 'LEFT', 1:'RIGHT', 2:'DOWN', 3:'ROTATE_LEFT', 4:'ROTATE_RIGHT', 5:'HARD_DROP'}
@@ -421,22 +471,28 @@ Press space to continue""")
             'HARD_DROP':   self.insta_drop
         }
         
-        #Return reward for action
+        prev_line_height = self.line_height
+        #Perform action
         result = ACTION_FN[actionStr]()
+
+        #Return reward for action
         if self.gameover:
             reward = self.gameOverReward
         else:
-            reward = self.getReward(actionStr, result)
+            reward = self.getReward(actionStr, result, self.line_height - prev_line_height)
          
         return (self.getState(), reward, self.gameover)
 
 
 # if __name__ == '__main__':
-#    INVALID_MOVE_REWARD = -999
-#    GAME_OVER_REWARD = -999
-#    VALID_MOVE_REWARD = 1
-#    REWARDS = (INVALID_MOVE_REWARD, GAME_OVER_REWARD, VALID_MOVE_REWARD)
-#    App = TetrisApp(ai=True, rewards=REWARDS)
-#    App.getState()
-#    print(App.doAction(5))
-#    print(App.doAction(5))
+#     INVALID_MOVE_REWARD = -999
+#     GAME_OVER_REWARD = -999
+#     VALID_MOVE_REWARD = 1
+#     LINE_HEIGHT_PENALTY = 10
+#     REWARDS = (INVALID_MOVE_REWARD, GAME_OVER_REWARD, VALID_MOVE_REWARD, LINE_HEIGHT_PENALTY)
+#     print("Starting game...")
+#     App = TetrisApp(ai=True, rewards=REWARDS)
+
+#     import random 
+#     print(App.getState())
+#     print(App.doAction(5))
