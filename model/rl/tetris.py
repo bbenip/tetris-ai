@@ -103,6 +103,9 @@ def check_collision(board, piece, offset):
 
 @tf.function
 def check_collision(board, piece, offset):
+    if piece.shape[0] + offset[0] >= board.shape[0]: return True
+    if piece.shape[1] + offset[1] >= board.shape[1]: return True
+
     padded_piece = padToShape(piece, board.shape, offset)
     collided_tiles = tf.math.multiply(board, padded_piece)
     collision = tf.math.reduce_sum(collided_tiles)
