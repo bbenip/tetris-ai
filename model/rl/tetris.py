@@ -437,15 +437,22 @@ class TetrisApp(object):
             dont_burn_my_cpu.tick(maxfps)
 
     def getState(self):
-        currView = join_matrices(self.board, self.stone, (self.stone_y, self.stone_x))
+        output = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True, infer_shape=False)
 
-        board = currView
+        board = join_matrices(self.board, self.stone, (self.stone_y, self.stone_x))
         next_piece = padToShape(self.next_stone, (4,4)) #2x2, 2x3, 1x4
         current_piece = padToShape(self.stone, (4,4)) #2x2, 2x3, 1x4 padded to 4x4
         position = tf.constant((self.stone_x, self.stone_y), dtype=tf.int32, shape=(1, 2)) #1x2 #2x1
         line_height = tf.constant(self.line_height, dtype=tf.int32, shape=(1, 1))
 
-        return([board, next_piece, current_piece, position, line_height])
+        output = output.write(0, board)
+        output = output.write(1, next_piece)
+        output = output.write(2, current_piece)
+        output = output.write(3, position)
+        output = output.write(4, line_height)
+        output.mark_used()
+
+        return(output)#[board, next_piece, current_piece, position, line_height])
     
     def getReward(self, actionStr, result, delta_line_height):
         reward = 0        
@@ -486,6 +493,9 @@ class TetrisApp(object):
          
         return (self.getState(), reward, self.gameover)
 
+# def printState(state):
+#     for i in range(state.size()):
+#         print(state.read(i))
 
 # if __name__ == '__main__':
 #     INVALID_MOVE_REWARD = -999
@@ -497,5 +507,6 @@ class TetrisApp(object):
 #     App = TetrisApp(ai=True, rewards=REWARDS)
 
 #     import random 
-#     print(App.getState())
-#     print(App.doAction(5))
+#     readState(App.getState())
+#     for i in range(10):
+#         readState(App.doAction(random.randint(0,5))[0])
