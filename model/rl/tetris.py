@@ -162,11 +162,12 @@ class TetrisApp(object):
         self.next_stone_idx = rand(len(tetris_shapes))
         self.next_stone = tetris_shapes[self.next_stone_idx]
         self.col_heights = tf.zeros(cols, dtype=np.int32)
+        self.curr_piece_rotation_cnt = 0
         
         if ai:
             if not rewards: 
                 raise ValueError("Required parameter: rewards")
-            self.invalidMoveReward, self.gameOverReward, self.validMoveReward, self.lineHeightPenalty = rewards
+            self.invalidMoveReward, self.gameOverReward, self.validMoveReward, self.lineHeightPenalty, self.rotationPenalty = rewards
             self.initRL()
         else:
             self.initPygame()
@@ -278,9 +279,10 @@ class TetrisApp(object):
         self.score += linescores[n] * self.level
         if self.lines >= self.level*6:
             self.level += 1
-            newdelay = 1000-50*(self.level-1)
-            newdelay = 100 if newdelay < 100 else newdelay
-            pygame.time.set_timer(pygame.USEREVENT+1, newdelay)
+            if not self.ai:
+                newdelay = 1000-50*(self.level-1)
+                newdelay = 100 if newdelay < 100 else newdelay
+                pygame.time.set_timer(pygame.USEREVENT+1, newdelay)
         return linescores[n] * self.level
     
     def move(self, delta_x):
@@ -298,8 +300,8 @@ class TetrisApp(object):
                             (self.stone_y, new_x))
             if not collided:
                 self.stone_x = new_x
-                return True
-        return False
+                return (True, 0)
+        return (False, 0)
 
     def quit(self):
         self.center_msg("Exiting...")
@@ -316,7 +318,6 @@ class TetrisApp(object):
                 row_clear_mask[i].assign(0)
                 cleared_rows += 1
                 self.line_height -= 1
-        
         self.board = remove_rows(self.board, row_clear_mask)
         return self.add_cl_lines(cleared_rows)
 
@@ -334,6 +335,7 @@ class TetrisApp(object):
                   self.board,
                   self.stone,
                   (prev_y, self.stone_x))
+                self.curr_piece_rotation_cnt = 0
                 self.line_height = max(self.line_height, rows - (prev_y))
                 scoreChange += self.clear_rows()
                 self.new_stone()
@@ -358,7 +360,7 @@ class TetrisApp(object):
                 scoreChange += dropped[1]
                 dropped = self.drop(True)
             scoreChange += dropped[1]
-        return scoreChange
+        return (True, scoreChange)
 
     def rotate_stone(self, direction = 1):
         if not self.gameover and not self.paused:
@@ -367,8 +369,15 @@ class TetrisApp(object):
                                    new_stone,
                                    (self.stone_y, self.stone_x)):
                 self.stone = new_stone
-                return True
-        return False
+                self.curr_piece_rotation_cnt += 1
+
+                #Penalize poor finesse by moving block down by 1 row
+                if self.curr_piece_rotation_cnt >= 3:
+                    bonus = self.drop(False)[1]
+                    #But be sure to give a reward for any cleared lines etc.
+                    return (True, bonus)
+                return (True, 0)
+        return (False, 0)
     
     def toggle_pause(self):
         self.paused = not self.paused
@@ -449,15 +458,12 @@ class TetrisApp(object):
         reward = 0        
 
         if actionStr in COLLISION_MOVES:
-            reward = self.validMoveReward if result else self.invalidMoveReward
-        elif actionStr == 'DOWN':
-            reward = result[1]
-        elif actionStr == 'HARD_DROP':
-            reward = result
-        else:
-            raise ValueError("Unknown move")
+            reward += self.validMoveReward if result[0] else self.invalidMoveReward
+        
+        reward += result[1]
 
         reward -= self.lineHeightPenalty * delta_line_height
+        reward -= self.rotationPenalty * max(0, (self.curr_piece_rotation_cnt - 3))
         return reward
     
     def doAction(self, action):
