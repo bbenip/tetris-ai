@@ -1,3 +1,5 @@
+# ACTIONS = {0: 'LEFT', 1:'RIGHT', 2:'DOWN', 3:'ROTATE_LEFT', 4:'ROTATE_RIGHT', 5:'HARD_DROP'}
+
 from tetris import TetrisApp
 if __name__ == '__main__':
     INVALID_MOVE_REWARD = -999
@@ -12,5 +14,12 @@ if __name__ == '__main__':
 
     import random 
     print(App.getState())
-    for i in range(10):
-        print(App.doAction(random.randint(0,5))[0])
+    for action in range(5):
+        for i in range(30):
+            App.doAction(action)
+        App.doAction(5)
+    
+    for i in range(30):
+        App.doAction(random.randint(0, 5))
+
+        

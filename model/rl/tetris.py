@@ -289,10 +289,10 @@ class TetrisApp(object):
         if not self.gameover and not self.paused:
             new_x = self.stone_x + delta_x
             if new_x < 0:
-                return False
+                return (False, 0)
                 new_x = 0
             if new_x > cols - len(self.stone[0]):
-                return False
+                return (False, 0)
                 new_x = cols - len(self.stone[0])
             collided = check_collision(
                             self.board,
